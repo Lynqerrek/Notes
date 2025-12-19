@@ -1,0 +1,1002 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartNotes AI v4</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        gray: {
+                            750: '#2d3748',
+                            850: '#1a202c',
+                            950: '#0d1117',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Marked.js for Markdown -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+        .dark ::-webkit-scrollbar-thumb { background: #4b5563; }
+        ::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+
+        /* Markdown Styles */
+        .prose h1 { font-size: 1.5em; font-weight: 700; margin-bottom: 0.5em; }
+        .prose h2 { font-size: 1.25em; font-weight: 600; margin-bottom: 0.5em; margin-top: 1em; }
+        .prose ul { list-style-type: disc; padding-left: 1.5em; margin-bottom: 1em; }
+        .prose ol { list-style-type: decimal; padding-left: 1.5em; margin-bottom: 1em; }
+        .prose blockquote { border-left: 4px solid #e5e7eb; padding-left: 1em; font-style: italic; opacity: 0.8; }
+        .dark .prose blockquote { border-left-color: #4b5563; }
+        .prose pre { background: #f3f4f6; padding: 1em; border-radius: 0.5em; overflow-x: auto; font-family: 'JetBrains Mono', monospace; font-size: 0.875em; margin-bottom: 1em; }
+        .dark .prose pre { background: #1f2937; }
+        .prose code { background: #f3f4f6; padding: 0.2em 0.4em; border-radius: 0.25em; font-family: 'JetBrains Mono', monospace; font-size: 0.875em; color: #ef4444; }
+        .dark .prose code { background: #374151; color: #f87171; }
+        .prose a { color: #6366f1; text-decoration: underline; }
+        .prose p { margin-bottom: 1em; line-height: 1.6; }
+        
+        input[type="checkbox"] { accent-color: #4f46e5; margin-right: 0.5em; cursor: pointer; }
+
+        /* Animations */
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+        
+        .speaking-active { color: #10b981 !important; background-color: #ecfdf5 !important; }
+        .dark .speaking-active { background-color: rgba(16, 185, 129, 0.2) !important; }
+
+        /* Toast Notification */
+        #toast {
+            transform: translateY(100%);
+            opacity: 0;
+            transition: all 0.3s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+        }
+        #toast.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 h-screen flex overflow-hidden text-gray-800 dark:text-gray-100 transition-colors duration-200">
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-6 right-6 z-50 bg-gray-800 dark:bg-white text-white dark:text-gray-900 px-6 py-3 rounded-xl shadow-xl flex items-center space-x-3">
+        <i id="toast-icon" class="fa-solid fa-check-circle text-green-400 dark:text-green-600"></i>
+        <span id="toast-msg" class="font-medium text-sm">Action successful</span>
+    </div>
+
+    <!-- Dictionary Modal -->
+    <div id="dictionary-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center backdrop-blur-sm p-4 animate-fade-in">
+        <div class="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-md w-full shadow-2xl border border-gray-100 dark:border-gray-700">
+            <div class="flex justify-between items-start mb-4">
+                <div>
+                    <h3 id="dict-word" class="text-2xl font-bold capitalize text-gray-800 dark:text-white"></h3>
+                    <p id="dict-phonetic" class="text-indigo-500 font-mono text-sm mt-1"></p>
+                </div>
+                <button onclick="app.closeDictionary()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+            <div id="dict-loading" class="hidden text-center py-4 text-gray-400">
+                <i class="fa-solid fa-circle-notch fa-spin mr-2"></i> Looking up...
+            </div>
+            <div id="dict-error" class="hidden text-center py-4 text-red-400 text-sm"></div>
+            <div id="dict-content" class="space-y-4 max-h-60 overflow-y-auto text-sm text-gray-600 dark:text-gray-300 pr-2">
+                <!-- Content injected here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar" class="w-20 lg:w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col flex-shrink-0 transition-all duration-300 z-20">
+        <!-- Logo -->
+        <div class="h-16 flex items-center justify-center lg:justify-start lg:px-6 border-b border-gray-100 dark:border-gray-700">
+            <div class="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-indigo-500/30">
+                S
+            </div>
+            <span class="ml-3 font-bold text-xl text-gray-800 dark:text-white hidden lg:block tracking-tight">SmartNotes</span>
+        </div>
+
+        <!-- Navigation -->
+        <nav class="flex-1 overflow-y-auto py-4 space-y-1 px-2">
+            <button onclick="app.setFilter('all')" id="nav-all" class="w-full flex items-center p-3 text-gray-600 dark:text-gray-400 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors group">
+                <i class="fa-solid fa-layer-group text-lg w-6 text-center"></i>
+                <span class="ml-3 font-medium hidden lg:block">All Notes</span>
+            </button>
+            <button onclick="app.setFilter('favorites')" id="nav-favorites" class="w-full flex items-center p-3 text-gray-600 dark:text-gray-400 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-amber-500 transition-colors group">
+                <i class="fa-solid fa-star text-lg w-6 text-center"></i>
+                <span class="ml-3 font-medium hidden lg:block">Favorites</span>
+            </button>
+            <button onclick="app.setFilter('trash')" id="nav-trash" class="w-full flex items-center p-3 text-gray-600 dark:text-gray-400 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-red-500 transition-colors group">
+                <i class="fa-solid fa-trash text-lg w-6 text-center"></i>
+                <span class="ml-3 font-medium hidden lg:block">Trash</span>
+            </button>
+
+            <div class="mt-8 px-4 hidden lg:block">
+                <div class="flex justify-between items-center mb-2">
+                    <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Smart Tags</h3>
+                </div>
+                <div id="tag-list" class="space-y-1">
+                    <!-- Tags generated by JS -->
+                </div>
+            </div>
+        </nav>
+
+        <!-- Bottom Actions -->
+        <div class="p-4 border-t border-gray-100 dark:border-gray-700 hidden lg:flex flex-col space-y-2">
+            <button onclick="app.toggleTheme()" class="flex items-center text-sm text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white transition">
+                <i id="theme-icon" class="fa-solid fa-moon w-6"></i>
+                <span>Toggle Theme</span>
+            </button>
+            <div class="flex space-x-2 pt-2">
+                <button onclick="app.exportData()" class="flex-1 py-1 text-xs bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded text-gray-600 dark:text-gray-300">Backup</button>
+                <label class="flex-1 py-1 text-xs bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded text-gray-600 dark:text-gray-300 text-center cursor-pointer">
+                    Import <input type="file" class="hidden" onchange="app.importData(this)">
+                </label>
+            </div>
+        </div>
+
+        <!-- New Note Button (Mobile) -->
+        <div class="p-4 border-t border-gray-100 dark:border-gray-700 lg:hidden">
+            <button onclick="app.createNote()" class="w-full h-12 bg-indigo-600 rounded-xl text-white shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 transition flex items-center justify-center">
+                <i class="fa-solid fa-plus text-xl"></i>
+            </button>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col h-full relative overflow-hidden bg-white dark:bg-gray-900">
+        
+        <!-- Top Bar -->
+        <header class="h-16 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between px-4 lg:px-8 flex-shrink-0 z-10 transition-colors">
+            <div class="flex items-center flex-1 max-w-2xl gap-3">
+                <button onclick="app.toggleFocusMode()" class="hidden lg:flex p-2 text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition" title="Focus Mode">
+                    <i class="fa-solid fa-bars-staggered"></i>
+                </button>
+                <div class="relative w-full max-w-md">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                    <input type="text" id="search-input" placeholder="Search notes..." 
+                        class="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 border-none rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 transition-all">
+                </div>
+            </div>
+            
+            <div class="flex items-center space-x-3">
+                <button onclick="app.toggleTheme()" class="lg:hidden p-2 text-gray-400 hover:text-indigo-600">
+                    <i class="fa-solid fa-moon-cloud"></i>
+                </button>
+
+                <button onclick="app.createNote()" class="hidden lg:flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition shadow-md shadow-indigo-500/20 text-sm font-medium">
+                    <i class="fa-solid fa-plus mr-2"></i> New Note
+                </button>
+                <div id="save-indicator" class="text-xs text-gray-400 font-medium transition-opacity opacity-0 flex items-center">
+                    <i class="fa-solid fa-check mr-1"></i> Saved
+                </div>
+            </div>
+        </header>
+
+        <!-- Two Column Layout -->
+        <div class="flex-1 flex overflow-hidden">
+            
+            <!-- Note List Column -->
+            <div id="note-list-col" class="w-full lg:w-80 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col flex-shrink-0 transition-all absolute lg:relative z-10 h-full transform lg:transform-none">
+                <div class="p-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
+                    <span id="note-count" class="text-xs font-bold text-gray-400 uppercase tracking-wider">0 Notes</span>
+                    <button onclick="app.toggleSort()" class="text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition" title="Sort by date">
+                        <i class="fa-solid fa-arrow-down-short-wide"></i>
+                    </button>
+                </div>
+                <div id="notes-container" class="flex-1 overflow-y-auto p-3 space-y-2">
+                    <!-- Notes injected here -->
+                </div>
+            </div>
+
+            <!-- Editor Column -->
+            <div id="editor-col" class="flex-1 bg-gray-50 dark:bg-gray-900 flex flex-col h-full relative w-full hidden lg:flex transition-colors">
+                
+                <!-- Empty State -->
+                <div id="empty-state" class="absolute inset-0 flex flex-col items-center justify-center text-gray-400 dark:text-gray-600 z-0">
+                    <div class="w-24 h-24 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-6">
+                        <i class="fa-solid fa-wand-magic-sparkles text-4xl text-indigo-400"></i>
+                    </div>
+                    <p class="text-lg font-medium text-gray-500 dark:text-gray-400">Select a note to view</p>
+                    <p class="text-sm mt-2">Try define words or use the toolbar</p>
+                </div>
+
+                <!-- Editor Interface -->
+                <div id="editor-interface" class="flex flex-col h-full z-10 hidden bg-white dark:bg-gray-900">
+                    <!-- Editor Toolbar & Meta -->
+                    <div class="h-14 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between px-6 bg-white dark:bg-gray-900 transition-colors">
+                         <div class="flex items-center space-x-1 lg:space-x-2">
+                            <!-- Formatting Toolbar -->
+                            <button onclick="app.insertMarkdown('bold')" class="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition" title="Bold">
+                                <i class="fa-solid fa-bold text-xs"></i>
+                            </button>
+                            <button onclick="app.insertMarkdown('italic')" class="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition" title="Italic">
+                                <i class="fa-solid fa-italic text-xs"></i>
+                            </button>
+                            <button onclick="app.insertMarkdown('h1')" class="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition" title="Heading 1">
+                                <span class="font-bold text-xs">H1</span>
+                            </button>
+                             <button onclick="app.insertMarkdown('check')" class="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition" title="Checklist">
+                                <i class="fa-solid fa-list-check text-xs"></i>
+                            </button>
+                            <div class="w-px h-4 bg-gray-200 dark:bg-gray-700 mx-1"></div>
+                            
+                            <!-- Smart Features -->
+                            <button onclick="app.defineWord()" class="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition" title="Define Word">
+                                <i class="fa-solid fa-book text-xs"></i>
+                            </button>
+                            <button onclick="app.toggleRead()" id="read-btn" class="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-green-600 dark:hover:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 rounded transition" title="Read Aloud">
+                                <i class="fa-solid fa-volume-high text-xs"></i>
+                            </button>
+                        </div>
+
+                        <div class="flex items-center space-x-1">
+                            <button onclick="app.downloadCurrentNote()" class="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition" title="Download .md">
+                                <i class="fa-solid fa-download"></i>
+                            </button>
+                            <button onclick="app.togglePreview()" class="p-2 text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition" title="Toggle Preview">
+                                <i class="fa-solid fa-eye" id="preview-icon"></i>
+                            </button>
+                            <button onclick="app.toggleFavorite()" id="favorite-btn" class="p-2 text-gray-400 hover:text-amber-500 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-900/20 transition" title="Toggle Favorite">
+                                <i class="fa-regular fa-star"></i>
+                            </button>
+                            <button onclick="app.deleteCurrentNote()" class="p-2 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition" title="Delete Note">
+                                <i class="fa-regular fa-trash-can"></i>
+                            </button>
+                            <button onclick="app.closeMobileEditor()" class="lg:hidden p-2 text-gray-500 ml-2">
+                                <i class="fa-solid fa-xmark text-lg"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Stats Bar -->
+                    <div class="px-8 pt-2 pb-0 flex space-x-3 text-[10px] text-gray-400 uppercase tracking-widest font-bold">
+                        <span><span id="read-time">0m</span> READ</span>
+                        <span>•</span>
+                        <span id="word-count">0 WORDS</span>
+                        <span>•</span>
+                        <span id="sentiment-indicator">NEUTRAL</span>
+                    </div>
+
+                    <!-- Title Input -->
+                    <input type="text" id="note-title" placeholder="Untitled Note" 
+                        class="w-full px-8 py-4 text-3xl font-bold text-gray-800 dark:text-gray-100 placeholder-gray-300 dark:placeholder-gray-600 border-none focus:ring-0 outline-none bg-transparent">
+
+                    <!-- Split View: Editor & Preview -->
+                    <div class="flex-1 flex overflow-hidden relative">
+                        <!-- Textarea -->
+                        <textarea id="note-content" placeholder="Start typing... Use / for commands..." 
+                            class="w-full h-full p-8 pt-0 resize-none border-none focus:ring-0 outline-none text-gray-600 dark:text-gray-300 text-lg leading-relaxed font-mono bg-transparent"></textarea>
+                        
+                        <!-- Preview Pane -->
+                        <div id="markdown-preview" class="hidden absolute inset-0 bg-white dark:bg-gray-900 p-8 pt-0 overflow-y-auto prose dark:prose-invert max-w-none">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <script>
+        class SmartNotes {
+            constructor() {
+                this.notes = JSON.parse(localStorage.getItem('smartNotes_v4')) || [];
+                // Migration
+                const oldNotes = JSON.parse(localStorage.getItem('smartNotes_v3'));
+                if (oldNotes && this.notes.length === 0) {
+                    this.notes = oldNotes;
+                    localStorage.removeItem('smartNotes_v3');
+                    this.saveToStorage();
+                }
+
+                this.activeNoteId = null;
+                this.filter = 'all';
+                this.searchQuery = '';
+                this.isPreviewMode = false;
+                this.sortDesc = true;
+                this.isFocusMode = false;
+                
+                // Speech Features (Only Synthesis remains)
+                this.synthesis = null;
+                this.isReading = false;
+
+                this.sentimentWords = {
+                    positive: ['good', 'great', 'love', 'happy', 'excellent', 'amazing', 'goal', 'achieve', 'success', 'hope', 'fun', 'smile'],
+                    negative: ['bad', 'sad', 'hate', 'fail', 'error', 'mistake', 'pain', 'sorry', 'worry', 'stress', 'angry', 'boring']
+                };
+
+                this.dom = {
+                    notesContainer: document.getElementById('notes-container'),
+                    noteListCol: document.getElementById('note-list-col'),
+                    editorCol: document.getElementById('editor-col'),
+                    editorInterface: document.getElementById('editor-interface'),
+                    emptyState: document.getElementById('empty-state'),
+                    titleInput: document.getElementById('note-title'),
+                    contentInput: document.getElementById('note-content'),
+                    previewPane: document.getElementById('markdown-preview'),
+                    searchInput: document.getElementById('search-input'),
+                    tagList: document.getElementById('tag-list'),
+                    noteCount: document.getElementById('note-count'),
+                    wordCount: document.getElementById('word-count'),
+                    readTime: document.getElementById('read-time'),
+                    saveIndicator: document.getElementById('save-indicator'),
+                    favoriteBtn: document.getElementById('favorite-btn'),
+                    previewIcon: document.getElementById('preview-icon'),
+                    navAll: document.getElementById('nav-all'),
+                    navFav: document.getElementById('nav-favorites'),
+                    navTrash: document.getElementById('nav-trash'),
+                    sentimentIndicator: document.getElementById('sentiment-indicator'),
+                    readBtn: document.getElementById('read-btn'),
+                    themeIcon: document.getElementById('theme-icon'),
+                    sidebar: document.getElementById('sidebar'),
+                    toast: document.getElementById('toast'),
+                    toastIcon: document.getElementById('toast-icon'),
+                    toastMsg: document.getElementById('toast-msg'),
+                    dictModal: document.getElementById('dictionary-modal'),
+                    dictWord: document.getElementById('dict-word'),
+                    dictPhonetic: document.getElementById('dict-phonetic'),
+                    dictContent: document.getElementById('dict-content'),
+                    dictLoading: document.getElementById('dict-loading'),
+                    dictError: document.getElementById('dict-error')
+                };
+
+                this.init();
+            }
+
+            init() {
+                this.renderNoteList();
+                this.renderTags();
+                this.setupEventListeners();
+                this.setupTheme();
+                this.setupTextToSpeech();
+
+                const lastId = localStorage.getItem('smartNotes_lastId');
+                if (lastId && this.notes.find(n => n.id === lastId && !n.isDeleted)) {
+                    this.selectNote(lastId);
+                }
+            }
+
+            setupTheme() {
+                const isDark = localStorage.getItem('smartNotes_theme') === 'dark';
+                if (isDark) {
+                    document.documentElement.classList.add('dark');
+                    this.dom.themeIcon.className = 'fa-solid fa-sun w-6';
+                }
+            }
+
+            toggleTheme() {
+                const html = document.documentElement;
+                if (html.classList.contains('dark')) {
+                    html.classList.remove('dark');
+                    localStorage.setItem('smartNotes_theme', 'light');
+                    this.dom.themeIcon.className = 'fa-solid fa-moon w-6';
+                } else {
+                    html.classList.add('dark');
+                    localStorage.setItem('smartNotes_theme', 'dark');
+                    this.dom.themeIcon.className = 'fa-solid fa-sun w-6';
+                }
+            }
+
+            toggleFocusMode() {
+                this.isFocusMode = !this.isFocusMode;
+                if (this.isFocusMode) {
+                    this.dom.sidebar.classList.add('lg:w-0', 'lg:opacity-0', 'lg:overflow-hidden');
+                    this.dom.noteListCol.classList.add('lg:w-0', 'lg:opacity-0', 'lg:overflow-hidden', 'lg:border-none');
+                    this.showToast("Focus mode on", "info");
+                } else {
+                    this.dom.sidebar.classList.remove('lg:w-0', 'lg:opacity-0', 'lg:overflow-hidden');
+                    this.dom.noteListCol.classList.remove('lg:w-0', 'lg:opacity-0', 'lg:overflow-hidden', 'lg:border-none');
+                }
+            }
+
+            // --- MARKDOWN HELPER ---
+            insertMarkdown(type) {
+                const el = this.dom.contentInput;
+                const start = el.selectionStart;
+                const end = el.selectionEnd;
+                const selection = el.value.substring(start, end);
+                let formatted = '';
+                
+                switch(type) {
+                    case 'bold': formatted = `**${selection || 'bold text'}**`; break;
+                    case 'italic': formatted = `*${selection || 'italic text'}*`; break;
+                    case 'h1': formatted = `\n# ${selection || 'Heading'}\n`; break;
+                    case 'check': formatted = `\n- [ ] ${selection || 'Task'}`; break;
+                }
+
+                el.setRangeText(formatted, start, end, 'select');
+                this.saveNote();
+                this.updateMetaInfo();
+                el.focus();
+            }
+
+            downloadCurrentNote() {
+                const note = this.notes.find(n => n.id === this.activeNoteId);
+                if (!note) return;
+                
+                const blob = new Blob([`# ${note.title}\n\n${note.content}`], { type: 'text/markdown' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${note.title || 'untitled'}.md`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                this.showToast("Note downloaded", "success");
+            }
+
+            showToast(msg, type = "success") {
+                this.dom.toastMsg.innerText = msg;
+                if (type === 'success') {
+                    this.dom.toastIcon.className = 'fa-solid fa-check-circle text-green-400 dark:text-green-600';
+                } else if (type === 'info') {
+                    this.dom.toastIcon.className = 'fa-solid fa-info-circle text-blue-400 dark:text-blue-600';
+                }
+                
+                this.dom.toast.classList.add('show');
+                setTimeout(() => {
+                    this.dom.toast.classList.remove('show');
+                }, 3000);
+            }
+
+            // --- WEB SPEECH API: SYNTHESIS (FREE & NATIVE) ---
+            setupTextToSpeech() {
+                if ('speechSynthesis' in window) {
+                    this.synthesis = window.speechSynthesis;
+                } else {
+                    this.dom.readBtn.style.display = 'none';
+                }
+            }
+
+            toggleRead() {
+                if (!this.synthesis) return;
+
+                if (this.synthesis.speaking) {
+                    this.synthesis.cancel();
+                    this.isReading = false;
+                    this.dom.readBtn.classList.remove('speaking-active');
+                } else {
+                    const text = this.dom.contentInput.value || "This note is empty.";
+                    const utterance = new SpeechSynthesisUtterance(text);
+                    utterance.rate = 1;
+                    
+                    utterance.onend = () => {
+                        this.isReading = false;
+                        this.dom.readBtn.classList.remove('speaking-active');
+                    };
+                    
+                    this.synthesis.speak(utterance);
+                    this.isReading = true;
+                    this.dom.readBtn.classList.add('speaking-active');
+                }
+            }
+
+            // --- DICTIONARY API ---
+            async defineWord() {
+                let selection = window.getSelection().toString().trim();
+                
+                if (!selection) {
+                    // Try to grab word at cursor logic could go here, or simple prompt
+                     selection = prompt("Enter a word to define:", "");
+                }
+
+                if (!selection) return;
+
+                selection = selection.replace(/[^a-zA-Z]/g, "");
+
+                this.dom.dictModal.classList.remove('hidden');
+                this.dom.dictLoading.classList.remove('hidden');
+                this.dom.dictContent.innerHTML = '';
+                this.dom.dictWord.innerText = selection;
+                this.dom.dictPhonetic.innerText = '';
+                this.dom.dictError.classList.add('hidden');
+
+                try {
+                    const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${selection}`);
+                    if (!res.ok) throw new Error("Word not found");
+                    const data = await res.json();
+                    this.renderDefinition(data[0]);
+                } catch (err) {
+                    this.dom.dictLoading.classList.add('hidden');
+                    this.dom.dictError.innerText = "Definition not found for this word.";
+                    this.dom.dictError.classList.remove('hidden');
+                }
+            }
+
+            renderDefinition(data) {
+                this.dom.dictLoading.classList.add('hidden');
+                this.dom.dictPhonetic.innerText = data.phonetic || '';
+                
+                let html = '';
+                
+                data.meanings.forEach(meaning => {
+                    html += `
+                        <div class="mb-4">
+                            <h4 class="font-bold italic text-indigo-500 mb-1">${meaning.partOfSpeech}</h4>
+                            <ul class="list-disc pl-5 space-y-1">
+                                ${meaning.definitions.slice(0, 3).map(def => `
+                                    <li>
+                                        <span>${def.definition}</span>
+                                        ${def.example ? `<div class="text-xs text-gray-400 mt-0.5">"${def.example}"</div>` : ''}
+                                    </li>
+                                `).join('')}
+                            </ul>
+                        </div>
+                    `;
+                });
+
+                this.dom.dictContent.innerHTML = html;
+            }
+
+            closeDictionary() {
+                this.dom.dictModal.classList.add('hidden');
+            }
+
+            setupEventListeners() {
+                this.dom.searchInput.addEventListener('input', (e) => {
+                    this.searchQuery = e.target.value.toLowerCase();
+                    this.renderNoteList();
+                });
+
+                const handleInput = () => {
+                    if (!this.activeNoteId) return;
+                    this.saveNote();
+                    this.updateMetaInfo();
+                    this.extractTags();
+                };
+
+                this.dom.titleInput.addEventListener('input', () => {
+                    handleInput();
+                    this.renderNoteList(false);
+                });
+
+                this.dom.contentInput.addEventListener('input', (e) => {
+                    this.handleSlashCommands(e);
+                    handleInput();
+                });
+
+                document.addEventListener('keydown', (e) => {
+                    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                        e.preventDefault();
+                        this.showToast("Saved", "success");
+                    }
+                });
+            }
+
+            handleSlashCommands(e) {
+                const el = this.dom.contentInput;
+                const val = el.value;
+                const cursor = el.selectionStart;
+                const lines = val.substring(0, cursor).split('\n');
+                const currentLine = lines[lines.length - 1];
+
+                const commands = {
+                    '/todo': '- [ ] ',
+                    '/check': '- [ ] ',
+                    '/idea': '### 💡 Idea: ',
+                    '/h1': '# ',
+                    '/h2': '## ',
+                    '/date': new Date().toLocaleDateString() + ' ',
+                    '/time': new Date().toLocaleTimeString() + ' '
+                };
+
+                for (let cmd in commands) {
+                    if (currentLine.endsWith(cmd)) {
+                        const beforeCmd = currentLine.substring(0, currentLine.length - cmd.length);
+                        const replacement = commands[cmd];
+                        const allLines = val.split('\n');
+                        const lineIndex = lines.length - 1;
+                        allLines[lineIndex] = beforeCmd + replacement;
+                        const newText = allLines.join('\n');
+                        el.value = newText;
+                    }
+                }
+            }
+
+            createNote() {
+                const newNote = {
+                    id: crypto.randomUUID(),
+                    title: '',
+                    content: '',
+                    tags: [],
+                    isFavorite: false,
+                    isDeleted: false,
+                    mood: 'neutral',
+                    createdAt: Date.now(),
+                    updatedAt: Date.now()
+                };
+
+                this.notes.unshift(newNote);
+                this.setFilter('all');
+                this.saveToStorage();
+                this.selectNote(newNote.id);
+                setTimeout(() => this.dom.titleInput.focus(), 100);
+            }
+
+            selectNote(id) {
+                this.activeNoteId = id;
+                localStorage.setItem('smartNotes_lastId', id);
+                
+                const note = this.notes.find(n => n.id === id);
+                if (!note) return;
+
+                this.dom.emptyState.classList.add('hidden');
+                this.dom.editorInterface.classList.remove('hidden');
+                
+                if (window.innerWidth < 1024) {
+                    this.dom.noteListCol.classList.add('hidden');
+                    this.dom.editorCol.classList.remove('hidden');
+                }
+
+                this.dom.titleInput.value = note.title;
+                this.dom.contentInput.value = note.content;
+                
+                this.isPreviewMode = false;
+                this.dom.previewPane.classList.add('hidden');
+                this.dom.contentInput.classList.remove('hidden');
+                this.dom.previewIcon.className = "fa-solid fa-eye";
+
+                this.updateMetaInfo();
+                this.updateFavoriteBtnState(note.isFavorite);
+                this.renderNoteList();
+            }
+
+            saveNote() {
+                if (!this.activeNoteId) return;
+                
+                const noteIndex = this.notes.findIndex(n => n.id === this.activeNoteId);
+                if (noteIndex === -1) return;
+
+                const content = this.dom.contentInput.value;
+                const title = this.dom.titleInput.value;
+
+                // Mood Analysis
+                const words = (content + ' ' + title).toLowerCase().split(/\s+/);
+                let score = 0;
+                words.forEach(w => {
+                    if (this.sentimentWords.positive.includes(w)) score++;
+                    if (this.sentimentWords.negative.includes(w)) score--;
+                });
+                const mood = score > 0 ? 'positive' : (score < 0 ? 'negative' : 'neutral');
+
+                const updatedNote = {
+                    ...this.notes[noteIndex],
+                    title: title,
+                    content: content,
+                    mood: mood,
+                    updatedAt: Date.now()
+                };
+
+                if (!updatedNote.title && updatedNote.content) {
+                    const firstLine = updatedNote.content.split('\n')[0];
+                    updatedNote.title = firstLine.substring(0, 30).replace(/[#*_]/g, '') + (firstLine.length > 30 ? '...' : '');
+                }
+
+                this.notes[noteIndex] = updatedNote;
+                this.saveToStorage();
+                this.extractTags(updatedNote);
+            }
+
+            saveToStorage() {
+                localStorage.setItem('smartNotes_v4', JSON.stringify(this.notes));
+                this.renderTags();
+            }
+
+            deleteCurrentNote() {
+                if (!this.activeNoteId) return;
+                const note = this.notes.find(n => n.id === this.activeNoteId);
+                
+                if (note.isDeleted) {
+                    if(confirm("Permanently delete this note?")) {
+                        this.notes = this.notes.filter(n => n.id !== this.activeNoteId);
+                        this.activeNoteId = null;
+                        this.saveToStorage();
+                        this.closeMobileEditor();
+                        this.renderNoteList();
+                        this.showToast("Note deleted permanently");
+                    }
+                } else {
+                    note.isDeleted = true;
+                    note.updatedAt = Date.now();
+                    this.saveToStorage();
+                    this.closeMobileEditor();
+                    this.renderNoteList();
+                    this.showToast("Note moved to Trash");
+                }
+            }
+
+            restoreNote(e, id) {
+                e.stopPropagation();
+                const note = this.notes.find(n => n.id === id);
+                if (note) {
+                    note.isDeleted = false;
+                    this.saveToStorage();
+                    this.renderNoteList();
+                    this.showToast("Note restored");
+                }
+            }
+
+            toggleFavorite() {
+                if (!this.activeNoteId) return;
+                const note = this.notes.find(n => n.id === this.activeNoteId);
+                note.isFavorite = !note.isFavorite;
+                this.updateFavoriteBtnState(note.isFavorite);
+                this.saveToStorage();
+                this.renderNoteList();
+                this.showToast(note.isFavorite ? "Added to favorites" : "Removed from favorites", "info");
+            }
+
+            updateFavoriteBtnState(isFav) {
+                const btn = this.dom.favoriteBtn;
+                if (isFav) {
+                    btn.innerHTML = '<i class="fa-solid fa-star"></i>';
+                    btn.className = 'p-2 text-amber-500 hover:text-amber-600 rounded-lg bg-amber-50 dark:bg-amber-900/20 transition';
+                } else {
+                    btn.innerHTML = '<i class="fa-regular fa-star"></i>';
+                    btn.className = 'p-2 text-gray-400 hover:text-amber-500 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-900/20 transition';
+                }
+            }
+
+            togglePreview() {
+                this.isPreviewMode = !this.isPreviewMode;
+                const icon = this.dom.previewIcon;
+                
+                if (this.isPreviewMode) {
+                    const rawContent = this.dom.contentInput.value;
+                    const cleanHtml = marked.parse(rawContent || '*No content*');
+                    this.dom.previewPane.innerHTML = cleanHtml;
+                    
+                    this.dom.previewPane.querySelectorAll('input[type="checkbox"]').forEach((checkbox, index) => {
+                        checkbox.addEventListener('change', () => {
+                            this.toggleCheckboxInSource(index, checkbox.checked);
+                        });
+                    });
+
+                    this.dom.contentInput.classList.add('hidden');
+                    this.dom.previewPane.classList.remove('hidden');
+                    icon.className = "fa-solid fa-pen-to-square";
+                } else {
+                    this.dom.contentInput.classList.remove('hidden');
+                    this.dom.previewPane.classList.add('hidden');
+                    icon.className = "fa-solid fa-eye";
+                }
+            }
+
+            toggleCheckboxInSource(index, isChecked) {
+                let content = this.dom.contentInput.value;
+                let matchIndex = 0;
+                const regex = /- \[([ xX])\]/g;
+                
+                const newContent = content.replace(regex, (match, state) => {
+                    if (matchIndex === index) {
+                        matchIndex++;
+                        return isChecked ? '- [x]' : '- [ ]';
+                    }
+                    matchIndex++;
+                    return match;
+                });
+
+                if (newContent !== content) {
+                    this.dom.contentInput.value = newContent;
+                    this.saveNote();
+                }
+            }
+
+            extractTags(note = null) {
+                const currentNote = note || this.notes.find(n => n.id === this.activeNoteId);
+                if (!currentNote) return;
+
+                const text = currentNote.content + " " + currentNote.title;
+                const tags = [...new Set(text.match(/#[a-z0-9]+/gi) || [])];
+                
+                if (JSON.stringify(tags) !== JSON.stringify(currentNote.tags)) {
+                    currentNote.tags = tags;
+                    this.saveToStorage();
+                }
+            }
+
+            updateMetaInfo() {
+                const note = this.notes.find(n => n.id === this.activeNoteId);
+                const text = this.dom.contentInput.value || '';
+                const wordCount = text.trim().split(/\s+/).filter(n => n).length;
+                const readTime = Math.ceil(wordCount / 200);
+
+                this.dom.wordCount.innerText = `${wordCount} words`;
+                this.dom.readTime.innerText = `${readTime}m`;
+
+                const moodMap = {
+                    'positive': { text: 'POSITIVE', color: 'text-green-500' },
+                    'negative': { text: 'CONCERNED', color: 'text-red-500' },
+                    'neutral': { text: 'NEUTRAL', color: 'text-gray-400' }
+                };
+                const m = moodMap[note?.mood || 'neutral'];
+                this.dom.sentimentIndicator.innerHTML = `${m.text}`;
+                this.dom.sentimentIndicator.className = `${m.color}`;
+            }
+
+            setFilter(filter) {
+                this.filter = filter;
+                this.activeNoteId = null;
+                [this.dom.navAll, this.dom.navFav, this.dom.navTrash].forEach(el => {
+                    el.className = "w-full flex items-center p-3 text-gray-600 dark:text-gray-400 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors group";
+                });
+                if (filter === 'all') {
+                    this.dom.navAll.classList.add('bg-indigo-50', 'text-indigo-600', 'dark:bg-indigo-900/30', 'dark:text-indigo-300');
+                } else if (filter === 'favorites') {
+                    this.dom.navFav.classList.add('bg-amber-50', 'text-amber-500', 'dark:bg-amber-900/30', 'dark:text-amber-300');
+                } else if (filter === 'trash') {
+                    this.dom.navTrash.classList.add('bg-red-50', 'text-red-500', 'dark:bg-red-900/30', 'dark:text-red-300');
+                }
+                if (window.innerWidth < 1024) this.closeMobileEditor();
+                this.renderNoteList();
+            }
+
+            closeMobileEditor() {
+                this.dom.editorCol.classList.add('hidden');
+                this.dom.noteListCol.classList.remove('hidden');
+                this.activeNoteId = null;
+                const items = document.querySelectorAll('.note-item');
+                items.forEach(i => i.classList.remove('border-indigo-500', 'bg-indigo-50', 'dark:bg-gray-700'));
+            }
+
+            toggleSort() {
+                this.sortDesc = !this.sortDesc;
+                this.renderNoteList();
+            }
+
+            exportData() {
+                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(this.notes));
+                const downloadAnchorNode = document.createElement('a');
+                downloadAnchorNode.setAttribute("href", dataStr);
+                downloadAnchorNode.setAttribute("download", "smart_notes_backup.json");
+                document.body.appendChild(downloadAnchorNode);
+                downloadAnchorNode.click();
+                downloadAnchorNode.remove();
+            }
+
+            importData(input) {
+                const file = input.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const imported = JSON.parse(e.target.result);
+                        if (Array.isArray(imported)) {
+                            let count = 0;
+                            imported.forEach(note => {
+                                if (!this.notes.find(n => n.id === note.id)) {
+                                    this.notes.push(note);
+                                    count++;
+                                }
+                            });
+                            this.saveToStorage();
+                            this.showToast(`Imported ${count} notes`);
+                            this.renderNoteList();
+                        }
+                    } catch (err) {
+                        this.showToast('Invalid JSON file', 'info');
+                    }
+                };
+                reader.readAsText(file);
+                input.value = '';
+            }
+
+            getFilteredNotes() {
+                let filtered = this.notes.filter(note => {
+                    const matchesSearch = (note.title + note.content).toLowerCase().includes(this.searchQuery);
+                    if (!matchesSearch) return false;
+                    if (this.filter === 'trash') return note.isDeleted;
+                    if (note.isDeleted) return false;
+                    if (this.filter === 'favorites') return note.isFavorite;
+                    if (this.filter === 'all') return true;
+                    return note.tags.includes(this.filter);
+                });
+                return filtered.sort((a, b) => this.sortDesc ? b.updatedAt - a.updatedAt : a.updatedAt - b.updatedAt);
+            }
+
+            renderNoteList(full = true) {
+                const notes = this.getFilteredNotes();
+                this.dom.noteCount.innerText = `${notes.length} Note${notes.length !== 1 ? 's' : ''}`;
+                
+                if (full) {
+                    this.dom.notesContainer.innerHTML = '';
+                    if (notes.length === 0) {
+                        this.dom.notesContainer.innerHTML = `
+                            <div class="text-center mt-10 text-gray-400 dark:text-gray-600">
+                                <i class="fa-solid fa-wind text-2xl mb-2"></i>
+                                <p class="text-sm">No notes found</p>
+                            </div>`;
+                        return;
+                    }
+
+                    notes.forEach(note => {
+                        const div = document.createElement('div');
+                        const isActive = note.id === this.activeNoteId;
+                        
+                        // Relative time logic
+                        const now = Date.now();
+                        const diff = now - note.updatedAt;
+                        let dateStr;
+                        if (diff < 60000) dateStr = 'Just now';
+                        else if (diff < 3600000) dateStr = `${Math.floor(diff/60000)}m ago`;
+                        else if (diff < 86400000) dateStr = `${Math.floor(diff/3600000)}h ago`;
+                        else dateStr = new Date(note.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+
+                        const previewText = (note.content || '').substring(0, 60).replace(/\n/g, ' ') + '...';
+                        const tagHtml = note.tags.slice(0, 3).map(t => `<span class="text-[10px] bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 px-1.5 py-0.5 rounded mr-1">${t}</span>`).join('');
+                        const moodMap = { 'positive': '🙂', 'negative': '😟', 'neutral': '' };
+                        const moodIcon = moodMap[note.mood] || '';
+
+                        div.className = `note-item p-4 rounded-xl cursor-pointer border-2 transition-all mb-2 hover:bg-gray-50 dark:hover:bg-gray-800/80 animate-fade-in ${isActive ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/20' : 'border-transparent bg-white dark:bg-gray-800 shadow-sm'}`;
+                        div.onclick = () => this.selectNote(note.id);
+                        
+                        let titleHtml = note.title || 'Untitled Note';
+                        if (this.searchQuery) {
+                            const re = new RegExp(`(${this.searchQuery})`, 'gi');
+                            titleHtml = titleHtml.replace(re, '<span class="bg-yellow-200 dark:bg-yellow-800/50">$1</span>');
+                        }
+
+                        div.innerHTML = `
+                            <div class="flex justify-between items-start mb-1">
+                                <h4 class="font-bold text-gray-800 dark:text-gray-200 truncate pr-2 flex-1 ${!note.title ? 'italic text-gray-400' : ''}">${titleHtml}</h4>
+                                <div class="flex items-center space-x-1">
+                                    <span class="text-xs">${moodIcon}</span>
+                                    ${note.isFavorite ? '<i class="fa-solid fa-star text-xs text-amber-400"></i>' : ''}
+                                </div>
+                            </div>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 mb-2 font-mono h-8 overflow-hidden">${previewText}</p>
+                            <div class="flex justify-between items-center">
+                                <div class="flex flex-wrap gap-y-1">${tagHtml}</div>
+                                <span class="text-[10px] text-gray-400">${dateStr}</span>
+                            </div>
+                            ${note.isDeleted ? `<button onclick="app.restoreNote(event, '${note.id}')" class="mt-2 text-xs text-indigo-600 dark:text-indigo-400 hover:underline">Restore</button>` : ''}
+                        `;
+                        this.dom.notesContainer.appendChild(div);
+                    });
+                }
+            }
+
+            renderTags() {
+                const allTags = {};
+                this.notes.forEach(n => {
+                    if (!n.isDeleted) {
+                        n.tags.forEach(t => allTags[t] = (allTags[t] || 0) + 1);
+                    }
+                });
+
+                const sortedTags = Object.entries(allTags).sort((a,b) => b[1] - a[1]);
+
+                this.dom.tagList.innerHTML = sortedTags.map(([tag, count]) => `
+                    <button onclick="app.setFilter('${tag}')" class="w-full flex items-center justify-between px-3 py-2 text-sm text-gray-600 dark:text-gray-400 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/30 hover:text-indigo-600 dark:hover:text-indigo-400 transition group ${this.filter === tag ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400' : ''}">
+                        <span class="truncate">${tag}</span>
+                        <span class="bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 group-hover:bg-white dark:group-hover:bg-gray-600 px-1.5 py-0.5 rounded text-xs">${count}</span>
+                    </button>
+                `).join('');
+            }
+        }
+
+        const app = new SmartNotes();
+    </script>
+</body>
+</html>
